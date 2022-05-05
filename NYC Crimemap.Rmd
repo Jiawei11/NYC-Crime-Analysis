@@ -1,0 +1,241 @@
+---
+title: "NYC Crime Interactive Map"
+author:Jiawei Bai
+date: '12/11/2021'
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(
+  echo = FALSE,
+  warning = FALSE,
+  message = FALSE)
+```
+
+
+```{r }
+library(flexdashboard); library(plotly);library(stats);library(ggplot2);library(DT);library(crosstalk)
+library(dplyr);library(tidyr);library(lubridate)
+library(rpart);library(rpart.plot)
+library(data.table)
+library(forcats)
+library(tigris)
+library(leaflet)
+library(sp)
+library(ggmap)
+library(maptools)
+library(httr)
+library(rgdal)
+library(tidyverse)
+library(geojsonio) 
+library(broom)     
+library(patchwork) 
+library(ggthemes)  
+library(sf); library(geojsonsf)
+library(RColorBrewer)
+library(ggiraph)
+```
+## INTRODUCTION
+### IDENTIFYING HIGH CRIME CONCENTRATION WITH POLICE BUDGET CUTS
+The New York Police Department (NYPD) budget reduction between fiscal years 2020 and 2021 has left unease for many New York locals. At the same time, NYPD is also partnering with schools offering public safety service, such as Columbia shuttles partnered with Via. The city-funded operating budget is projected to decrease by $345 million or almost 7% from 2020 (Pietrzak, 2020). Now is the opportunity to rebalance officer deployment based on analytics that identify areas of high crime concentration, as well as promote and apply the public safety service, such as shuttles, to other needed neighborhoods. This would in turn, increase efficiency and productivity of the police force by accurately deploying the force based on concentration of crimes and easing the minds of local residents who may believe they will be left unprotected and unsafe. In addition, it would help the NYPD improve its image. We want to start the analysis and this project by asking two important questions:
+
+1. Where and when does the crime occur the most ?
+2. What types of crime occur the most in each area ?
+
+Understanding these questions would help us provide efficient and effective training and distribution of the police force, and allow the NYPD to identify which neighborhood is in need of services and the audiences to communicate with. 
+
+
+
+```{r }
+setwd("E:/Downloads/")
+data = read.csv("NYPD_Arrests_Data__Historic_.csv")
+```
+
+```{r}
+data  <- as.data.table(data)
+top_ten = data
+
+top_ten$OFNS_DESC = 
+  fct_lump_n(
+  top_ten$OFNS_DESC,
+  10,
+  other_level = "Other"
+)
+
+top_ten <- top_ten%>%
+  group_by(OFNS_DESC)%>%
+  summarize( number = n())%>%
+  ungroup()%>%
+  mutate(n = n())%>%
+  arrange(desc(number))
+
+top_ten <-top_ten[-1,]
+```
+
+
+## ANALYSIS – CHART 1
+Based on historical analysis, we can predict what specific crimes will occur with consideration to location. Once we understand the types of crimes that occur, we can then reduce training and turnover costs by providing more accurate police training specific to those crimes. In areas where police officers will be less involved, the analytics can allow the teams to market precautionary warnings or other solutions to the public if there is a crime within a certain mile radius from where people are located. In the below graphs we have identified that dangerous drugs chargers lead the largest crime offense with assault being the second highest.
+
+
+### Chart 1.1: Top 10 Crime Data in Histagram
+
+```{r}
+h1<-ggplot() + 
+    geom_bar(data =top_ten, aes(x = OFNS_DESC, y = number,fill =OFNS_DESC), 
+ stat = "identity")+
+  theme(axis.text.x = element_text(angle = 30, hjust = 1, vjust = 1,size = rel(0.7)))+
+  labs(title = 'Top Crime Types',
+              subtitle = "Showing Only The Top 10 Crimes",
+#              caption = "Data source: NYC OpenData",
+              x = "Crime types", y = "Total number",
+              tag = "1")
+h1_plotly<- ggplotly(h1)%>%
+  layout( annotations = 
+ list(x = 2, y = -0.1, text = paste0('Source: <a href="https://opendata.cityofnewyork.us/”> NYC Open Data </a>'), 
+      showarrow = F, xref='paper', yref='paper', 
+      xanchor='right', yanchor='auto', xshift=0, yshift=0,
+      font=list(size=10, color="black")))
+h1_plotly
+```
+
+
+### Chart 1.2: Top 10 Crime Data in Pie Chart
+
+```{r}
+colors <- c('rgb(211,94,96)', 'rgb(128,133,133)', 'rgb(144,103,167)', 'rgb(171,104,87)', 'rgb(114,147,203)', 'rgb(64,79,36)','rgb(87,92,126)','rgb(150,155,116)','rgb(134,143,152)','rgb(0,52,77)') 
+pie3 <- plot_ly(top_ten, labels = ~OFNS_DESC, values = ~number, type = 'pie',
+        textposition = 'inside',
+        texttemplate = '%{label} <br>(%{percent})',
+        insidetextfont = list(color = '#FFFFFF'),
+#        hoverinfo = 'text',
+#        text = ~paste(number),
+        marker = list(colors = colors, line = list(color = '#FFFFFF', width = 1)),  showlegend = FALSE) %>%
+  layout(title = list(text = paste0('Top Ten Crime')), annotations = 
+ list(x = 1, y = -0.1, text = paste0('Source: <a href="https://opendata.cityofnewyork.us/”> NYC Open Data </a>'), 
+      showarrow = F, xref='paper', yref='paper', 
+      xanchor='right', yanchor='auto', xshift=0, yshift=0,
+      font=list(size=10, color="black")))
+bscols(pie3)
+```
+
+
+## ANALYSIS – CHART 2
+
+Graph 2.1 shows the alarming increased trajectory of the number of crimes from 2019 to 2020, by month, in Columbia’s precinct. 
+ 
+
+
+### Gragh 2.1
+
+```{r}
+Month <- c('January', 'February', 'March', 'April', 'May', 'June', 'July',
+            'August', 'September', 'October', 'November', 'December')
+
+crime2019 <- c(20091,17692,19672,19197,19553,17444,19577,18083,16656,17469,15546,13637)
+crime2020 <- c(16171,15472,13179,8295,13581,8083,7461,9828,11304,13027,11467,12545)
+crime_sum <- crime2019 + crime2020
+month_sequence <- c(1,2,3,4,5,6,7,8,9,10,11,12)
+data <- data.frame(Month, crime2019, crime2020, month_sequence, stringsAsFactors = FALSE)
+data$Month <- factor(data$Month, levels = unique(data$Month)[order(data$month_sequence, decreasing = FALSE)])
+
+
+fig <- plot_ly(data, x = ~Month, y = ~crime2019, type = 'bar', name = '2019',texttemplate = '%{y:.2s}', textposition = 'outside')
+fig <- fig %>% add_trace(y = ~crime2020, name = '2020')
+fig <- fig %>% layout(yaxis = list(title = 'Number of Crimes'), barmode = 'stack',
+  title = list(text = paste0('Number of Crimes','<br>','<sup>','The graph shows the number of crimes recorded from 2019 to 2020','</sup>')), annotations = 
+ list(x = 1.25, y = 0, text = paste0('Source: <a href="https://opendata.cityofnewyork.us/”> NYC Open Data </a>'), 
+      showarrow = F, xref='paper', yref='paper', 
+      xanchor='right', yanchor='auto', xshift=0, yshift=0,
+      font=list(size=10, color="black")))
+fig.layout.xaxis.tickformat = '%b'
+fig
+```
+
+## ANALYSIS - CHART 3
+After knowing the number of crime cases, the team would like to know more about the crimes' characteristic, as a result, we emphasized the crime suspects' gender and age distributions.
+
+### Graph 3.1: NYC Crime Count By Gender and Age Group
+This graph shows in each age group, the crimes' distribution of male and female, red representing female while blue representing male.
+
+<div class='tableauPlaceholder' id='viz1639266554862' style='position: relative'>
+<object class='tableauViz'  style='display:none;'>
+<param name='host_url' value='https%3A%2F%2Fpublic.tableau.com%2F' /> 
+<param name='embed_code_version' value='3' /> 
+<param name='site_root' value='' />
+<param name='name' value='BJW&#47;Dashboard1' />
+<param name='tabs' value='no' />
+<param name='toolbar' value='yes' />
+<param name='animate_transition' value='yes' />
+<param name='display_static_image' value='yes' />
+<param name='display_spinner' value='yes' />
+<param name='display_overlay' value='yes' />
+<param name='display_count' value='yes' />
+<param name='language' value='zh-CN' />
+<param name='filter' value='publish=yes' />
+</object>
+</div>                
+<script type='text/javascript'>
+var divElement = document.getElementById('viz1639266554862');
+var vizElement = divElement.getElementsByTagName('object')[0];
+if ( divElement.offsetWidth > 800 ) { vizElement.style.width='1000px';vizElement.style.height='827px';} else if ( divElement.offsetWidth > 500 ) { vizElement.style.width='1000px';vizElement.style.height='827px';} else { vizElement.style.width='100%';vizElement.style.height='877px';}       var scriptElement = document.createElement('script');
+scriptElement.src = 'https://public.tableau.com/javascripts/api/viz_v1.js';
+vizElement.parentNode.insertBefore(scriptElement, vizElement);
+</script>
+
+
+## ANALYSIS - CHART 4
+There is a large crime rate in west Harlem and near Morningside parks according to the graph below, and unfortunately these neighborhoods are just near Columbia University campus. Thus, in order to increase the safety and security of Columbia University students, we propose a new distribution and availability of free shuttle service provided by Columbia Transportation and NY Public Safety. After gaining knowledge regarding geography and time distribution of crime, we can further design a corresponding shuttle coverage depending on those time and places. (e.g., if during holiday the crime rate near a certain park is higher, we can extend our shuttle services there). The below graphs show the number of crimes that occur in specific neighborhoods in New York City. There is a large crime rate in Columbia’s precinct. Also, in order to summarize all the required data we just emphasized, we are planing to link all the graphs we plotted into one dashboard using Tableau.
+
+### Graph 4.1: NYC Crime Comprehensive Analysis
+This dashboard is consist of 3 graphs, the top graph is the map of New York, The point is summarized by neighborhoods, each point representing a neighborhood in New York, the bigger and darker the point, the more crimes happened in this neighborhood. When clicking the point on the map, more details of the crime information will show up in the bottom two graph. The left graph showing the top 10 kinds of crime happened in the neighborhood selected, while for the right graph is a pie chart showing the age distribution of the crime suspects in the selected neighborhood.
+
+<div class='tableauPlaceholder' id='viz1639268458069' style='position: relative'>
+<object class='tableauViz'  style='display:none;'>
+<param name='host_url' value='https%3A%2F%2Fpublic.tableau.com%2F' /> 
+<param name='embed_code_version' value='3' /> 
+<param name='site_root' value='' />
+<param name='name' value='NYCDashboard_16392622120670&#47;NYCDashboard' />
+<param name='tabs' value='no' />
+<param name='toolbar' value='yes' />
+<param name='animate_transition' value='yes' />
+<param name='display_static_image' value='yes' />
+<param name='display_spinner' value='yes' />
+<param name='display_overlay' value='yes' />
+<param name='display_count' value='yes' />
+<param name='language' value='zh-CN' />
+<param name='filter' value='publish=yes' />
+</object>
+</div>
+<script type='text/javascript'>
+var divElement = document.getElementById('viz1639268458069');
+var vizElement = divElement.getElementsByTagName('object')[0];
+vizElement.style.width='1000px';vizElement.style.height='927px';
+var scriptElement = document.createElement('script');
+scriptElement.src = 'https://public.tableau.com/javascripts/api/viz_v1.js';
+vizElement.parentNode.insertBefore(scriptElement, vizElement);
+</script>
+
+
+
+
+## Summary
+
+With the visibility of crimes in the above graphs, this analysis and project would help NYPD operate more efficiently and effectively. The NYPD could use the remaining resources to offer more services like random petrol or shuttles, and communicate with the geographic groups that are in the more dangerous neighborhood. Over this can help increase public safety, save the NYPD budget, and build a better NYPD image. 
+
+In conclusion, based on the graph the team plotted, we can see that neighborhood of Harlem has the most number of crime occurred, and in the fitst quarter of the year, the number of crimes occurred are more than rest part of the year in both 2019 and 2020. Thus, we suggest the NYPD put more efforts near the neighborhood of Harlem, and increase the patrols during the month from January to March. According to all the crimes occurred, taking dangerous drugs tends to be occur the most among most of the neighborhoods, and the number of cases of this type of crime occupies a dominant position in all cases.
+
+
+## Contribution
+```{r}
+data.table(Member_Name = c('Djokovic, Amira', 'Bai, Jiawei','Chan, Ching Ching',  'Ko, Ting Han' ), Contribution_Score = c(10,10,10,10,10))
+```
+
+
+
+## Reference
+```{r}
+print("Pietrzak, Adrian. “Was the NYPD Budget Cut by $1Billion?” August 13, 2020.")
+print("https://cbcny.org/research/was-nypd-budget-cut-1-billion")
+print("https://data.cityofnewyork.us/Public-Safety/NYPD-Arrests-Data-Historic-/8h9b-rp9u")
+print("https://www1.nyc.gov/site/nypd/bureaus/patrol/precincts/26th-precinct.page")
+```
